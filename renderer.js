@@ -1,38 +1,75 @@
 var floorSize = 1000;
 
 var scene = new THREE.Scene();
+var old_mesh, new_mesh;
 
 var camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
-
-scene.add(camera);
+// scene.add(camera);
 
 var renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-var geom = new THREE.Geometry();
+// CONTROLS
+controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+var geom;
+var nt = {LEFT: 1, RIGHT: 2, HYPN: 4};
+var ornt = {LEFT_TO_LEFT:    1,
+            LEFT_TO_RIGHT:   2,
+            RIGHT_TO_LEFT:   4,
+            RIGHT_TO_RIGHT:  8,
+            HYPN_TO_LEFT:   16,
+            HYPN_TO_RIGHT:  32};
 
 var f_index = 0;
 var m_points = [];
 var f_vertices = [];
 var f_faces = [];
-var n_faces = [];
+var neighbors = [];
 
-function add_vertex(v)
+function face_id() {
+    return rnd_str(4).toUpperCase();
+}
+
+function rndstr() {
+    return rnd_str(2, true).toUpperCase();
+}
+
+/*
+ * Return face with given face ID.
+ */
+function get_face(id) {
+    return _.find(f_faces, function(f) {return f.id === id;});
+}
+
+/*
+ * Set face with given ID to given face.
+ */
+function set_face(id, f) {
+    remove_face(id);
+    f_faces.push(f);
+}
+
+function add_vertex(x, y, z)
 {
+    var v = new THREE.Vector3(x, y, z);
     f_vertices.push(v);
-    geom.vertices.push(v);
     return f_index++;
 }
 
-function add_face(f) {
-    f_faces.push(f);
-    geom.faces.push(new THREE.Face3(f.lv, f.rv, f.tv));
+function set_geom() {
+    geom = new THREE.Geometry();
+
+    _.each(f_vertices, function(f_v) {geom.vertices.push(f_v);});
+    _.each(f_faces, function(f) {geom.faces.push(new THREE.Face3(f.lv, f.rv, f.tv));});
+
+    return new THREE.Mesh(geom, new THREE.MeshBasicMaterial({wireframe: true, color: 'black'}));
 }
 
-function add_face(f) {
-    f_faces.push(f);
-    geom.faces.push(new THREE.Face3(f.lv, f.rv, f.tv));
+function update_scene(old_mesh, new_mesh) {
+    old_mesh && scene.remove(old_mesh);
+    scene.add(new_mesh);
 }
 
 function get_middle_point(p1, p2) {
@@ -50,35 +87,199 @@ function get_middle_point(p1, p2) {
     v1 = f_vertices[p1];
     v2 = f_vertices[p2];
 
-    i = add_vertex(new THREE.Vector3((v1.x + v2.x) / 2,
-                                     0,
-                                     (v1.z + v2.z) / 2));
+    i = add_vertex((v1.x + v2.x) / 2, 0, (v1.z + v2.z) / 2);
 
     m_points.push({key: key, pos: i});
 
     return i;
 }
 
-function remove_face(f)
-{
-    f_faces = _.without(f_faces, f);
+/*
+ * Assign given cathetus-adjacent same-sized faces twin faces
+ * (result of recently-split larger face)
+ * to each other as neighbors.
+ */
+function assign_twins(lf, rf) {
+    lf.lcn = {f_id: rf.id, t: nt.LEFT};
+    rf.rcn = {f_id: lf.id, t: nt.RIGHT};
+    return {lf: lf, rf: rf};
 }
 
-function split(f_index, origin) {
-    var f = f_faces[f_index];
+/*
+ * Split given face f with no neighbors.
+ * Assign resultant faces to each other as neighbors.
+ */
+function split_0n(f_id) {
+    var f, sr, nr;
+    f = get_face(f_id);
+    if (!f) {return [];}
+    sr = split_once(f);
+    nr = assign_twins(sr[0], sr[1]);
+    return [nr.lf, nr.rf];
+}
+
+/*
+ * Assign given hypotenuse-cathetus-adjacent
+ * origin face o and neighboring face n
+ * to each other as neighbors
+ * with orientation ornt.
+ */
+function assign_hcn(o, n, ornt) {
+    if (ornt === ornt.HYPN_TO_LEFT) {
+        o.hypn = {f_id: n.id, t: nt.LEFT};
+        n.lcn  = {f_id: o.id, t: nt.HYPN};
+    }
+    if (ornt === ornt.HYPN_TO_RIGHT) {
+        o.hypn = {f_id: n.id, t: nt.RIGHT};
+        n.rcn  = {f_id: o.id, t: nt.HYPN};
+    }
+    return {o: o, n: n};
+}
+
+/*
+ * Assign given hypotenuse-hypotenuse-adjacent
+ * origin face o and neighboring face n
+ * to each other as neighbors.
+ */
+function assign_hhn(o, n) {
+    o.hypn = {f_id: n.id, t: nt.HYPN};
+    n.hypn = {f_id: o.id, t: nt.HYPN};
+    return {o: o, n: n};
+}
+
+/*
+ * Split given face f with one or both cathetus-cathetus or
+ * cathetus-hypotenuse neighbors.
+ * Assign resultant faces to each other as neighbors.
+ * Assign twins as the neighbor(s) to surrounding faces.
+ */
+function split_cXn(f_id) {
+    var f, sr, twr, lf, rf, nf, r;
+    f = get_face(f_id);
+    if (!f) {return [];}
+    if (!f.lcn && !f.rcn) {
+        console.log("_ccn no neighbors");
+        return [];
+    }
+    console.log("_ccn");
+    sr = split_once(f);
+    twr = assign_twins(sr[0], sr[1]);
+
+    lf = twr.lf;
+    rf = twr.rf;
+
+    if (f.lcn) {
+        nf = get_face(f.lcn);
+        // Assign new left face to the cathetus neighbor(s).
+        if (nt.LEFT === f.lcn.t) {
+            r = assign_hcn(lf, nf, ornt.HYPN_TO_LEFT);
+            lf = r.o;
+            nf = r.n;
+            // Store neighboring face.
+            set_face(nf.id, nf);
+        }
+        if (nt.RIGHT === f.lcn.t) {
+            r = assign_hcn(lf, nf, ornt.HYPN_TO_RIGHT);
+            lf = r.o;
+            nf = r.n;
+            // Store neighboring face.
+            set_face(nf.id, nf);
+        }
+    }
+
+    if (f.rcn) {
+        nf = get_face(f.rcn);
+        // Assign new right face to the cathetus neighbor(s).
+        if (nt.LEFT === f.rcn.t) {
+            r = assign_hcn(rf, nf, ornt.HYPN_TO_LEFT);
+            rf = r.o;
+            nf = r.n;
+            // Store neighboring face.
+            set_face(nf.id, nf);
+        }
+        if (nt.RIGHT === f.rcn.t) {
+            r = assign_hcn(rf, nf, ornt.HYPN_TO_RIGHT);
+            rf = r.o;
+            nf = r.n;
+            // Store neighboring face.
+            set_face(nf.id, nf);
+        }
+    }
+
+    // Assign new left face to the hypotenuse neighbor(s).
+    if (f.lcn && (nt.HYPN === f.lcn.t)) {
+        nf = get_face(f.lcn);
+        r = assign_hhn(lf, nf);
+        lf = r.o;
+        nf = r.n;
+        // Store neighboring face.
+        set_face(nf.id, nf);
+    }
+
+    if (f.rcn && (nt.HYPN === f.rcn.t)) {
+        nf = get_face(f.rcn);
+        r = assign_hhn(rf, nf);
+        rf = r.o;
+        nf = r.n;
+        // Store neighboring face.
+        set_face(nf.id, nf);
+    }
+
+    return [lf, rf];
+}
+
+/*
+ * Split given face f with hypotenuse-hypotenuse neighbor.
+ * Assign resultant faces from f and n to each other as neighbors.
+ */
+function split_hhn(f_id) {
+    
+}
+
+function split_once(f) {
+    var vc, tn0, tn1, area;
+    vc = get_middle_point(f.lv, f.rv);
+
+    cath_len = Math.sqrt(Math.pow(f_vertices[f.tv].x - f_vertices[vc].x, 2) +
+                         Math.pow(f_vertices[f.tv].z - f_vertices[vc].z, 2),
+                         2);
+    tn_area = Math.round((Math.pow(cath_len, 2) / 2) / 100);
+
+    tn0 = {lv: f.tv, rv: f.lv, tv: vc, id: face_id(), name: "tn-" + tn_area + "-" + rndstr()};
+    tn1 = {lv: f.rv, rv: f.tv, tv: vc, id: face_id(), name: "tn-" + tn_area + "-" + rndstr()};
+
+    return [tn0, tn1];
+}
+
+function remove_face(f_id) {
+    f_faces = _.without(f_faces, get_face(f_id));
+}
+
+function split(f, origin) {
+    var fc_index;
     var faces = [];
     var n_faces = [];
+    var found = false;
     var tn0, tn1, lcn, rcn;
+
+    // Find index of given face.
+    for (fc_index in f_faces) {
+        if (f_faces[fc_index] === f) {
+            found = true;
+            break;
+        }
+    }
+
+console.log("found ", found, f.name);
     
+    if (!found) {return;}
+
     faces = split_once(f);
-
-    tn0 = faces[0];
-    tn0 = faces[0];
-
     n_faces = faces;
 
     if (origin) {
-        if (f.lcn && f.lcn === origin) {
+        if (f.lcn && (f.lcn === origin)) {
+console.log("split left");
             lcn = [];
             lcn = split_once(faces[0]);
             faces = [faces[1]];
@@ -86,8 +287,8 @@ function split(f_index, origin) {
             n_faces = JSON.parse(JSON.stringify(lcn));
             n_faces.push(faces[1]);
         }
-
-        if(f.rcn && f.rcn == origin) {
+        if (f.rcn && (f.rcn === origin)) {
+console.log("split right");
             rcn = [];
             rcn = split_once(faces[1]);
             faces = [faces[0]];
@@ -97,81 +298,412 @@ function split(f_index, origin) {
         }
     }
 
+console.log("remove ", f.name);
+
     remove_face(f);
     f_faces = f_faces.concat(faces);
-    neighbors[f_index] = n_faces;
+    neighbors[fc_index] = n_faces;
 
     if (f.hypn && (f.hypn != origin)) {
+console.log("f.hypn ", f.hypn.name);
+console.log("f ", f.name);
         split(f.hypn, f);
     }
-
-    return faces;
 }
 
-var v0 = add_vertex(new THREE.Vector3(-floorSize / 2, 0, -floorSize / 2));
-var v1 = add_vertex(new THREE.Vector3(0, 0, -floorSize / 2));
-var v2 = add_vertex(new THREE.Vector3(floorSize / 2, 0, -floorSize / 2));
+function split_by_name(name) {
+    var f = _.find(f_faces, function(_f) {return _f.name === name;});
+    split(f);
+    assign_neighbors(neighbors);
+    old_mesh = new_mesh;
+    new_mesh = set_geom();
+    update_scene(old_mesh, new_mesh);
+}
 
-var v3 = add_vertex(new THREE.Vector3(-floorSize / 2, 0, 0));
-var v4 = add_vertex(new THREE.Vector3(0, 0, 0));
-var v5 = add_vertex(new THREE.Vector3(floorSize / 2, 0, 0));
+function assign_neighbors(n_faces) {
+    var origin, origin_face, tn0, tn1, i,
+        first, second, first_face, second_face, tn2, tn3,
+        tg0, tg1, tg2, tg3, tnX;
 
-var v6 = add_vertex(new THREE.Vector3(-floorSize / 2, 0, floorSize / 2));
-var v7 = add_vertex(new THREE.Vector3(0, 0, floorSize / 2));
-var v8 = add_vertex(new THREE.Vector3(floorSize / 2, 0, floorSize / 2));
+    if (!n_faces) {return;}
 
-var t0 = {lv: v3, rv: v1, tv: v0};
-var t1 = {lv: v1, rv: v3, tv: v4};
+    if (n_faces.length <= 0) {
+        console.log("No neighboring candidates.");
+        return;
+    }
 
-var t2 = {lv: v4, rv: v2, tv: v1};
-var t3 = {lv: v2, rv: v4, tv: v5};
+    // 2/0 - no hypotenuse neighbor
+    if (1 === n_faces.length) {
+console.log("2/0 - no hypotenuse neighbor");
+        origin = _.keys(n_faces)[0];
+        origin_face = f_faces[origin];
 
-var t4 = {lv: v6, rv: v4, tv: v3};
-var t5 = {lv: v4, rv: v6, tv: v7};
+console.log("origin ", origin_face.name);
 
-var t6 = {lv: v7, rv: v5, tv: v4};
-var t7 = {lv: v5, rv: v7, tv: v8};
+        tn0 = n_faces[origin][0];
+        tn1 = n_faces[origin][1];
+
+        // Assign new neighbors to surrounding faces.
+        // Left cathetus neighbor.
+        if (origin_face.lcn) {
+            console.log("Left cathetus neighbor.");
+
+            if (origin_face.lcn.lcn === origin_face) {
+console.log("left one ", origin_face.lcn.lcn.name);
+console.log("tn0 ", tn0.name);
+                origin_face.lcn.lcn = tn0;
+            }
+
+            if (origin_face.lcn.rcn === origin_face) {
+                origin_face.lcn.rcn = tn0;
+            }
+
+            tn0.hypn = origin_face.lcn;
+        }
+
+        // Right cathetus neighbor.
+        if (origin_face.rcn) {
+            console.log("Right cathetus neighbor.");
+
+            if (origin_face.rcn.lcn === origin_face)
+                origin_face.rcn.lcn = tn1;
+
+            if (origin_face.rcn.rcn === origin_face)
+                origin_face.rcn.rcn = tn1;
+
+            tn1.hypn = origin_face.rcn;
+        }
+
+        // Child faces are neighbors to each other.
+        tn0.lcn = tn1;
+        tn1.rcn = tn0;
+    }
+
+    for (i = 0; i < n_faces.length; i += 1) {
+        first = _.keys(n_faces)[i];
+        if ((i + 1) < n_faces.length) {
+            second = _.keys(n_faces)[i + 1];
+        } else {
+            break;
+        }
+
+        // Each original face splits into two children.
+        if ((first && second) &&
+            ((2 === n_faces[first].length) && (2 === n_faces[second].length)))
+        {
+            console.log("2/2 i: ", i);
+
+           tn0 = n_faces[first][0];
+           tn1 = n_faces[first][1];
+
+           tn2 = n_faces[second][0];
+           tn3 = n_faces[second][1];
+
+            first_face = f_faces[first];
+            second_face = f_faces[second];
+
+            // Assign new neighbors to surrounding faces.
+            // Left cathetus neighbor of the first face.
+            if (first_face.lcn)
+            {
+                if (first_face.lcn.lcn === first_face)
+                    first_face.lcn.lcn = tn0;
+
+                if (first_face.lcn.rcn === first_face)
+                    first_face.lcn.rcn = tn0;
+                
+                tn0.hypn = first_face.lcn;
+            }
+
+            // Right cathetus neighbor of the first face.
+            if (first_face.rcn)
+            {
+                if (first_face.rcn.lcn === first_face)
+                    first_face.rcn.lcn = tn1;
+
+                if (first_face.rcn.rcn === first_face)
+                    first_face.rcn.rcn = tn1;
+                
+                tn1.hypn = first_face.rcn;
+            }
+
+            // Child faces are neighbors to each other.
+            tn0.lcn = tn1;
+            tn0.rcn = tn3;
+
+            tn1.lcn = tn2;
+            tn1.rcn = tn0;
+            
+            tn2.lcn = tn3;
+            tn2.rcn = tn1;
+
+            tn3.lcn = tn0;
+            tn3.rcn = tn2;
+
+            // Assign new neighbors to surrounding faces
+            // if second face is the last face.
+            if (i === n_faces.length - 2) {
+                // Left cathetus neighbor of the second face.
+                if (second_face.lcn) {
+                    if (second_face.lcn.lcn === second_face)
+                        second_face.lcn.lcn = tn2;
+
+                    if (second_face.lcn.rcn === second_face)
+                        second_face.lcn.rcn = tn2;
+
+                    if (second_face.lcn.hypn === second_face)
+                        second_face.lcn.hypn = tn2;
+                
+                    tn2.hypn = second_face.lcn;
+                }
+
+                // Right cathetus neighbor of the second face.
+                if (second_face.rcn) {
+                    if (second_face.rcn.lcn === second_face)
+                        second_face.rcn.lcn = tn3;
+
+                    if (second_face.rcn.rcn === second_face)
+                        second_face.rcn.rcn = tn3;
+
+                    if (second_face.rcn.hypn === second_face)
+                        second_face.rcn.hypn = tn3;
+                
+                    tn3.hypn = second_face.rcn;
+                }
+            }
+        }
+
+        // First original face splits into two children.
+        // Second original face splits into three children.
+        if ((first && second) &&
+            ((2 === n_faces[first].length) && (3 === n_faces[second].length))) {
+            console.log("2/3 i: ", i);
+
+            tg0 = n_faces[first][0];
+            tg1 = n_faces[first][1];
+
+            tg2 = n_faces[second][0];
+            tg3 = n_faces[second][1];
+
+            tnX = n_faces[second][2];
+            
+            // Assign new neighbors to surrounding faces.
+            // Left cathetus neighbor of the first face.
+            if (first_face.lcn) {
+                if (first_face.lcn.lcn === first_face)
+                    first_face.lcn.lcn = tg0;
+
+                if (first_face.lcn.rcn === first_face)
+                    first_face.lcn.rcn = tg0;
+                
+                tg0.hypn = first_face.lcn;
+            }
+
+            // Right cathetus neighbor of the first face.
+            if (first_face.rcn) {
+                if (first_face.rcn.lcn === first_face)
+                    first_face.rcn.lcn = tg1;
+
+                if (first_face.rcn.rcn === first_face)
+                    first_face.rcn.rcn = tg1;
+                
+                tg1.hypn = first_face.rcn;
+            }
+
+            // Find out which cathetus of the second face is neighbouring
+            // the first face.
+            if (second_face.lcn && (first === second_face.lcn)) {
+                console.log("the left cathetus");
+
+                tg0.lcn = tg1;
+                tg0.rcn = tg3;
+
+                tg1.lcn = tg2;
+                tg1.rcn = tg0;
+
+                tg2.lcn = tg3;
+                tg2.rcn = tg1;
+                tg2.hypn = tnX;
+
+                tg3.lcn = tg0;
+                tg3.rcn = tg2;
+
+                tnX.rcn = tg2;
+                tnX.hypn = second_face.rcn;
+
+                if (second_face.rcn) {
+                    if (second_face.rcn.lcn === second_face)
+                        second_face.rcn.lcn = tnX;
+
+                    if (second_face.rcn.rcn === second_face)
+                        second.rcn.rcn = tnX;
+
+                    if (second_face.rcn.hypn === second_face)
+                        second_face.rcn.hypn = tnX;
+                }
+            }
+
+            if (second_face.rcn && (first_face === second_face.rcn)) {
+                console.log("the right cathetus");
+
+                tg0.lcn = tg1;
+                tg0.rcn = tg3;
+
+                tg1.lcn = tg2;
+                tg1.rcn = tg0;
+
+                tg2.lcn = tg3;
+                tg2.rcn = tg1;
+
+                tg3.lcn = tg0;
+                tg3.rcn = tg2;
+                tg3.hypn = tnX;
+
+                tnX.lcn = tg3;
+                tnX.hypn = second_face.lcn;
+
+                if (second_face.lcn) {
+                    if (second_face.lcn.lcn === second_face)
+                        second_face.lcn.lcn = tnX;
+
+                    if (second_face.lcn.rcn === second_face)
+                        second_face.lcn.rcn = tnX;
+
+                    if (second_face.lcn.hypn === second_face)
+                        second_face.lcn.hypn = tnX;
+                }
+            }
+        }
+
+        // First original face splits into three children.
+        // Second original face splits into two children.
+        if ((first && second) &&
+            ((3 === n_faces[first].length) && (2 === n_faces[second].length))) {
+            console.log("3/2 i: ", i);
+
+            tg0 = n_faces[first][0];
+            tg1 = n_faces[first][1];
+
+            tn0 = n_faces[first][2];
+
+            tn1 = n_faces[second][0];
+            tn2 = n_faces[second][1];
+
+            // Find out which side of the first face is halved.
+            if (tn0.rcn && tg0 === tn0.rcn) {
+                console.log("the left side is halved");
+
+                tg1.hypn = tn2;
+
+                tn0.lcn = tn1;
+
+                tn1.lcn = tn2;
+                tn1.rcn = tn0;
+
+                tn2.lcn = tg1;
+                tn2.rcn = tn1;
+            }
+
+            if (tn0.lcn && (tg1 === tn0.lcn)) {
+                console.log("the right side is halved");
+
+                tg0.hypn = tn1;
+
+                tn0.rcn = tn2;
+
+                tn1.lcn = tn2;
+                tn1.rcn = tg0;
+                
+                tn2.lcn = tn0;
+                tn2.rcn = tn1;
+            }
+
+            if (second_face.lcn) {
+                if (second_face.lcn.lcn === second_face)
+                    second_face.lcn.lcn = tn1;
+
+                if (second_face.lcn.rcn === second_face)
+                    second_face.lcn.rcn = tn1;
+
+                if (second_face.lcn.hypn === second_face)
+                    second_face.lcn.hypn = tn1;
+                
+                tn1.hypn = second_face.lcn;
+            }
+
+            if (second_face.rcn) {
+                if (second_face.rcn.lcn === second_face)
+                    second_face.rcn.lcn = tn2;
+
+                if (second_face.rcn.rcn === second_face)
+                    second_face.rcn.rcn = tn2;
+
+                if (second_face.rcn.hypn === second_face)
+                    second_face.rcn.hypn = tn2;
+                
+                tn2.hypn = second_face.rcn;
+            }
+        }
+
+        // Each original face splits into three children.
+        if ((first && second) &&
+            ((3 === n_faces[first].length) && (3 === n_faces[second].length)))
+        {
+            console.log("3/3 i: ", i);
+
+            
+        }
+    }
+
+    // 2/3 NAREJENO
+
+    // 3/2 NAREJENO
+
+    // 3/3 NAREJENO
+
+    neighbors = [];
+}
+
+var v0 = add_vertex(-floorSize / 2, 0, -floorSize / 2);
+var v1 = add_vertex(0, 0, -floorSize / 2);
+var v2 = add_vertex(floorSize / 2, 0, -floorSize / 2);
+var v3 = add_vertex(-floorSize / 2, 0, 0);
+var v4 = add_vertex(0, 0, 0);
+var v5 = add_vertex(floorSize / 2, 0, 0);
+var v6 = add_vertex(-floorSize / 2, 0, floorSize / 2);
+var v7 = add_vertex(0, 0, floorSize / 2);
+var v8 = add_vertex(floorSize / 2, 0, floorSize / 2);
+
+var t0 = {lv: v3, rv: v1, tv: v0, id: face_id(), name: "t0"};
+var t1 = {lv: v1, rv: v3, tv: v4, id: face_id(), name: "t1"};
+var t2 = {lv: v4, rv: v2, tv: v1, id: face_id(), name: "t2"};
+var t3 = {lv: v2, rv: v4, tv: v5, id: face_id(), name: "t3"};
+var t4 = {lv: v6, rv: v4, tv: v3, id: face_id(), name: "t4"};
+var t5 = {lv: v4, rv: v6, tv: v7, id: face_id(), name: "t5"};
+var t6 = {lv: v7, rv: v5, tv: v4, id: face_id(), name: "t6"};
+var t7 = {lv: v5, rv: v7, tv: v8, id: face_id(), name: "t7"};
 
 // Neighbors and their relative sizes.
-t0.lcn = null; t0.rcn = null; t0.hypn = t1;
-t0.name = "t0";
+// t0.lcn = null; t0.rcn = null; t0.hypn = t1.id;
+// t1.lcn = t2.id; t1.rcn = t4.id; t1.hypn = t0.id;
+t1.lcn = t2.id;
+//t2.lcn = t1.id; t2.rcn = null; t2.hypn = t3.id;
+// t2.lcn = t1.id; t2.rcn = null; t2.hypn = null;
+t2.lcn = t1.id;
+t3.lcn = null; t3.rcn = t6.id; t3.hypn = t2.id;
+t4.lcn = null; t4.rcn = t1.id; t4.hypn = t5.id;
+t5.lcn = t6.id; t5.rcn = null; t5.hypn = t4.id;
+t6.lcn = t5.id; t6.rcn = t3.id; t6.hypn = t7.id;
+t7.lcn = null; t7.rcn = null; t7.hypn = t6.id;
 
-t1.lcn = t2; t1.rcn = t4; t1.hypn = t0;
-t1.name = "t1";
+f_faces = [t0];
+// f_faces = [t1, t2];
+// f_faces = [t0, t1, t2, t3, t4, t5, t6, t7];
 
-t2.lcn = t1; t2.rcn = null; t2.hypn = t3;
-t2.name = "t2";
+// geom.computeFaceNormals();
 
-t3.lcn = null; t3.rcn = t6; t3.hypn = t2;
-t3.name = "t3";
-
-t4.lcn = null; t4.rcn = t1; t4.hypn = t5;
-t4.name = "t4";
-
-t5.lcn = t6; t5.rcn = null; t5.hypn = t4;
-t5.name = "t5";
-
-t6.lcn = t5; t6.rcn = t3; t6.hypn = t7;
-t6.name = "t6";
-
-t7.lcn = null; t7.rcn = null; t7.hypn = t6;
-t7.name = "t7";
-
-add_face(t0);
-add_face(t1);
-add_face(t2);
-add_face(t3);
-add_face(t4);
-add_face(t5);
-add_face(t6);
-add_face(t7);
-
-console.log("x ", t0);
-
-geom.computeFaceNormals();
-
-var mesh = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({wireframe: true, color: 'black'}));
-scene.add(mesh);
+new_mesh = set_geom();
+update_scene(null, new_mesh);
 
 var key_codes = {KEY_UP: 38,
                  KEY_DOWN: 40,
@@ -188,7 +720,8 @@ var key_codes = {KEY_UP: 38,
                  KEY_NUM_5: 101,
                  KEY_NUM_STAR: 106,
                  KEY_p: 80,
-                 KEY_t: 84};
+                 KEY_t: 84,
+                 KEY_n: 78};
 
 var rotation_commands = {KEY_UP:     {axis: 'x', step:  0.02},
                          KEY_DOWN:   {axis: 'x', step: -0.02},
@@ -228,28 +761,28 @@ document.addEventListener
 ('keydown', function(e)
  {
      var which;
-     if (_.invert(key_codes)[e.keyCode]) {
-         which = rotation_commands[_.invert(key_codes)[e.keyCode]];
-         if (which) {
-             rotate_camera(which.axis, which.step);
-             return;
-         }
+     // if (_.invert(key_codes)[e.keyCode]) {
+     //     which = rotation_commands[_.invert(key_codes)[e.keyCode]];
+     //     if (which) {
+     //         rotate_camera(which.axis, which.step);
+     //         return;
+     //     }
 
-         which = translation_commands[_.invert(key_codes)[e.keyCode]];
-         if (which) {
-             translate_camera(which.axis, which.step);
-         }
-     }
+     //     which = translation_commands[_.invert(key_codes)[e.keyCode]];
+     //     if (which) {
+     //         translate_camera(which.axis, which.step);
+     //     }
+     // }
 
-     if (e.keyCode == key_codes.KEY_NUM_5) {
-         reset_camera_rotation();
-     }
+     // if (e.keyCode === key_codes.KEY_NUM_5) {
+     //     reset_camera_rotation();
+     // }
 
-     if (e.keyCode == key_codes.KEY_NUM_STAR) {
-         reset_camera_translation();
-     }
+     // if (e.keyCode === key_codes.KEY_NUM_STAR) {
+     //     reset_camera_translation();
+     // }
 
-     if (e.keyCode == key_codes.KEY_p) {
+     if (e.keyCode === key_codes.KEY_p) {
          console.log("translation:");
          console.log("x: ", camera.position.x);
          console.log("y: ", camera.position.y);
@@ -261,27 +794,134 @@ document.addEventListener
      }
      
      // Set top-down view.
-     if (e.keyCode == key_codes.KEY_t) {
+     if (e.keyCode === key_codes.KEY_t) {
          camera.position.x = 0;
-         camera.position.y = 1210;
+         camera.position.y = 1410;
          camera.position.z = 0;
 
          camera.rotation.x = -1.57;
          camera.rotation.y = 0;
          camera.rotation.z = 0;
      }
+
+     if (e.keyCode === key_codes.KEY_n) {
+         split(t0);
+         assign_neighbors(neighbors);
+         old_mesh = new_mesh;
+         new_mesh = set_geom();
+         update_scene(old_mesh, new_mesh);
+     }
  });
 
-for (k in geom.vertices) {
-    f_vertices.push(geom.vertices[k]);
+// function for drawing rounded rectangles
+function roundRect(ctx, x, y, w, h, r) 
+{
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.lineTo(x+w-r, y);
+    ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+    ctx.lineTo(x+w, y+h-r);
+    ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+    ctx.lineTo(x+r, y+h);
+    ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+    ctx.lineTo(x, y+r);
+    ctx.quadraticCurveTo(x, y, x+r, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();   
 }
 
-reset_camera_rotation();
+function makeTextSprite( message, parameters )
+{
+	if (typeof(parameters) === undefined) parameters = {};
+	
+	var fontface = parameters.hasOwnProperty("fontface") ? 
+		parameters["fontface"] : "Arial";
+	
+	var fontsize = parameters.hasOwnProperty("fontsize") ? 
+		parameters["fontsize"] : 18;
+	
+	var borderThickness = parameters.hasOwnProperty("borderThickness") ? 
+		parameters["borderThickness"] : 4;
+	
+	var borderColor = parameters.hasOwnProperty("borderColor") ?
+		parameters["borderColor"] : { r:0, g:0, b:0, a:1.0 };
+	
+	var backgroundColor = parameters.hasOwnProperty("backgroundColor") ?
+		parameters["backgroundColor"] : { r:255, g:255, b:255, a:1.0 };
+
+	//var spriteAlignment = parameters.hasOwnProperty("alignment") ?
+	//	parameters["alignment"] : THREE.SpriteAlignment.topLeft;
+
+	var spriteAlignment = THREE.SpriteAlignment.topLeft;
+
+	var canvas = document.createElement('canvas');
+	var context = canvas.getContext('2d');
+	context.font = "Bold " + fontsize + "px " + fontface;
+    
+	// get size data (height depends only on font size)
+	var metrics = context.measureText( message );
+	var textWidth = metrics.width;
+	
+	// background color
+	context.fillStyle   = "rgba(" + backgroundColor.r + "," + backgroundColor.g + ","
+								  + backgroundColor.b + "," + backgroundColor.a + ")";
+	// border color
+	context.strokeStyle = "rgba(" + borderColor.r + "," + borderColor.g + ","
+								  + borderColor.b + "," + borderColor.a + ")";
+
+	context.lineWidth = borderThickness;
+	roundRect(context, borderThickness/2, borderThickness/2, textWidth + borderThickness, fontsize * 1.4 + borderThickness, 6);
+	// 1.4 is extra height factor for text below baseline: g,j,p,q.
+	
+	// text color
+	context.fillStyle = "rgba(0, 0, 0, 1.0)";
+
+	context.fillText(message, borderThickness, fontsize + borderThickness);
+	
+	// canvas contents will be used for a texture
+	var texture = new THREE.Texture(canvas);
+	texture.needsUpdate = true;
+
+	var spriteMaterial = new THREE.SpriteMaterial({map: texture,
+                                                       useScreenCoordinates: false,
+                                                       alignment: spriteAlignment});
+	var sprite = new THREE.Sprite(spriteMaterial);
+	sprite.scale.set(300, 150, 1.0);
+	return sprite;	
+}
+
+var labels = [];
+function label() {
+    var i, spritey, a, b, c, _t;
+    for (i = 0; i < geom.faces.length; i += 1) {
+        spritey = makeTextSprite(" " + f_faces[i].name + " ", {fontsize: 32, backgroundColor: {r:0, g:0, b:0, a:0}});
+        a = geom.vertices[geom.faces[i].a];
+        c = geom.vertices[geom.faces[i].b];
+        b = geom.vertices[geom.faces[i].c];
+
+        _t = new THREE.Triangle(a, b, c);
+
+        spritey.position = _t.midpoint().clone().multiplyScalar(1.1);
+        labels.push(spritey);
+    }
+    _.each(labels, function(s) {scene.add(s);});
+}
+
+function remove_labels() {
+    _.each(labels, function(s) {scene.remove(s);});
+    labels = [];
+}
+
+// label();
+
+// reset_camera_rotation();
 reset_camera_translation();
 
 var render = function() {
     requestAnimationFrame(render);
     renderer.render(scene, camera);
+    controls.update();
 };
 
 render();
