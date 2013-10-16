@@ -100,8 +100,8 @@ function get_middle_point(p1, p2) {
  * to each other as neighbors.
  */
 function assign_twins(lf, rf) {
-    lf.lcn = {f_id: rf.id, t: nt.LEFT};
-    rf.rcn = {f_id: lf.id, t: nt.RIGHT};
+    lf.lcn = {id: rf.id, t: nt.RIGHT};
+    rf.rcn = {id: lf.id, t: nt.LEFT};
     return {lf: lf, rf: rf};
 }
 
@@ -124,14 +124,14 @@ function split_0n(f_id) {
  * to each other as neighbors
  * with orientation ornt.
  */
-function assign_hcn(o, n, ornt) {
-    if (ornt === ornt.HYPN_TO_LEFT) {
-        o.hypn = {f_id: n.id, t: nt.LEFT};
-        n.lcn  = {f_id: o.id, t: nt.HYPN};
+function assign_hcn(o, n, _ornt) {
+    if (_ornt === ornt.HYPN_TO_LEFT) {
+        o.hypn = {id: n.id, t: nt.LEFT};
+        n.lcn  = {id: o.id, t: nt.HYPN};
     }
-    if (ornt === ornt.HYPN_TO_RIGHT) {
-        o.hypn = {f_id: n.id, t: nt.RIGHT};
-        n.rcn  = {f_id: o.id, t: nt.HYPN};
+    if (_ornt === ornt.HYPN_TO_RIGHT) {
+        o.hypn = {id: n.id, t: nt.RIGHT};
+        n.rcn  = {id: o.id, t: nt.HYPN};
     }
     return {o: o, n: n};
 }
@@ -142,34 +142,20 @@ function assign_hcn(o, n, ornt) {
  * to each other as neighbors.
  */
 function assign_hhn(o, n) {
-    o.hypn = {f_id: n.id, t: nt.HYPN};
-    n.hypn = {f_id: o.id, t: nt.HYPN};
+    o.hypn = {id: n.id, t: nt.HYPN};
+    n.hypn = {id: o.id, t: nt.HYPN};
     return {o: o, n: n};
 }
 
 /*
- * Split given face f with one or both cathetus-cathetus or
- * cathetus-hypotenuse neighbors.
- * Assign resultant faces to each other as neighbors.
- * Assign twins as the neighbor(s) to surrounding faces.
+ * Assign new cathetus or hypotenuse neighbors
+ * to the newly split left (lf) and right (rf) faces.
+ * Also assign the new faces as neighbors to their neighbors.
  */
-function split_cXn(f_id) {
-    var f, sr, twr, lf, rf, nf, r;
-    f = get_face(f_id);
-    if (!f) {return [];}
-    if (!f.lcn && !f.rcn) {
-        console.log("_ccn no neighbors");
-        return [];
-    }
-    console.log("_ccn");
-    sr = split_once(f);
-    twr = assign_twins(sr[0], sr[1]);
-
-    lf = twr.lf;
-    rf = twr.rf;
-
+function assign_hXn(f, lf, rf) {
+    var nf, r;
     if (f.lcn) {
-        nf = get_face(f.lcn);
+        nf = get_face(f.lcn.id);
         // Assign new left face to the cathetus neighbor(s).
         if (nt.LEFT === f.lcn.t) {
             r = assign_hcn(lf, nf, ornt.HYPN_TO_LEFT);
@@ -188,7 +174,7 @@ function split_cXn(f_id) {
     }
 
     if (f.rcn) {
-        nf = get_face(f.rcn);
+        nf = get_face(f.rcn.id);
         // Assign new right face to the cathetus neighbor(s).
         if (nt.LEFT === f.rcn.t) {
             r = assign_hcn(rf, nf, ornt.HYPN_TO_LEFT);
@@ -208,7 +194,7 @@ function split_cXn(f_id) {
 
     // Assign new left face to the hypotenuse neighbor(s).
     if (f.lcn && (nt.HYPN === f.lcn.t)) {
-        nf = get_face(f.lcn);
+        nf = get_face(f.lcn.id);
         r = assign_hhn(lf, nf);
         lf = r.o;
         nf = r.n;
@@ -217,7 +203,7 @@ function split_cXn(f_id) {
     }
 
     if (f.rcn && (nt.HYPN === f.rcn.t)) {
-        nf = get_face(f.rcn);
+        nf = get_face(f.rcn.id);
         r = assign_hhn(rf, nf);
         rf = r.o;
         nf = r.n;
@@ -225,7 +211,30 @@ function split_cXn(f_id) {
         set_face(nf.id, nf);
     }
 
-    return [lf, rf];
+    return {lf: lf, rf: rf};
+}
+
+/*
+ * Split given face f with one or both cathetus-cathetus or
+ * cathetus-hypotenuse neighbors.
+ * Assign resultant faces to each other as neighbors.
+ * Assign twins as the neighbor(s) to surrounding faces.
+ */
+function split_cXn(f_id) {
+    var f, sr, twr, r;
+    f = get_face(f_id);
+    if (!f) {return [];}
+    if (!f.lcn && !f.rcn) {
+        console.log("_cXn no neighbors");
+        return [];
+    }
+
+    sr = split_once(f);
+    twr = assign_twins(sr[0], sr[1]);
+
+    r = assign_hXn(f, twr.lf, twr.rf);
+
+    return [r.lf, r.rf];
 }
 
 /*
@@ -233,7 +242,127 @@ function split_cXn(f_id) {
  * Assign resultant faces from f and n to each other as neighbors.
  */
 function split_hhn(f_id) {
+    var f, n, sr, twr, r, srn, twrn, rn;
+    f = get_face(f_id);
+    if (!f) {return [];}
+    if (!f.hypn || (nt.HYPN !== f.hypn.t)) {
+        console.log("_hhn no hypn neighbors");
+        return [];
+    }
+
+    console.log("_hhn", f_id);
+
+    sr = split_once(f);
+    twr = assign_twins(sr[0], sr[1]);
+    r = assign_hXn(f, twr.lf, twr.rf);
+
+    // Hypotenuse-hypotenuse neighbor.
+    n = get_face(f.hypn.id);
+
+    srn = split_once(n);
+    twrn = assign_twins(srn[0], srn[1]);
+    rn = assign_hXn(n, twrn.lf, twrn.rf);
+
+    // Assign resultant faces from f and n to each other as neighbors.
+    r.lf.rcn = {id: rn.rf.id, t: nt.LEFT};
+    r.rf.lcn = {id: rn.lf.id, t: nt.RIGHT};
+
+    rn.lf.rcn = {id: r.rf.id, t: nt.LEFT};
+    rn.rf.lcn = {id: r.lf.id, t: nt.RIGHT};
     
+    return [r.lf, r.rf, rn.lf, rn.rf];
+}
+
+/*
+ * Split face with given face ID f_id twice.
+ * The second split should be on which_cath side.
+ */
+function split_twice(f_id, which_cath) {
+    var f, sr, sr2, r = {};
+
+    f = get_face(f_id);
+    if (!f) {return {};}
+
+    // Split main face.
+    sr = split_once(f);
+
+    // Split left face of the main face.
+    if (nt.LEFT === which_cath) {
+        sr2 = split_once(sr[0]);
+        r = {twins: {lf: sr2[0], rf: sr2[1]}, rf: sr[1]};
+    }
+    // Split right face of the main face.
+    if (nt.RIGHT === which_cath) {
+        sr2 = split_once(sr[1]);
+        r = {twins: {lf: sr2[0], rf: sr2[1]}, lf: sr[0]};
+    }
+    return r;
+}
+
+function split_hcn(f_id, which_cath = null, new_ns = {}, new_fs = [], old_fs = []) {
+    var f, sr, twr, r, t, hcn_res, s2r;
+
+    f = get_face(f_id);
+    if (!f) {return new_fs;}
+
+    // No hypotenuse neighbor?
+    if (_.isEmpty(new_ns) && !f.hypn) {
+        console.log("_hcn no hypotenuse neighbor.");
+        return {new_ns: new_ns, new_fs: new_fs, old_fs: old_fs};
+    }
+
+    console.log("_hcn start");
+
+    // Initial split.
+    if (_.isEmpty(new_ns)) {
+console.log("_hcn initial split");
+        sr = split_once(f);
+        twr = assign_twins(sr[0], sr[1]);
+        r = assign_hXn(f, twr.lf, twr.rf);
+        new_fs.push(twr.lf, twr.rf);
+        old_fs.push(f.id);
+        new_ns = {lf: {f: twr.lf, t: nt.RIGHT},
+                  rf: {f: twr.rf, t: nt.LEFT}};
+
+        // Initial split always has a further face to split.
+        return split_hcn(f.hypn.id, f.hypn.t, new_ns, new_fs, old_fs);
+    }
+
+    // Further division:
+
+    console.log("_hcn Further division:");
+
+    console.log("_hcn type: ", which_cath);
+    // console.log("_hcn new_ns: ", new_ns);
+    // console.log("_hcn new_fs: ", new_fs);
+    // console.log("_hcn old_fs: ", old_fs);
+
+    sr2 = split_twice(f_id, which_cath);
+
+    console.log("sr2 ", sr2);
+
+    // No hypotenuse neighbor? Stop.
+    if (!f.hypn) {
+        console.log("_hcn No neighbor.");
+        return {new_fs: new_fs, old_fs: old_fs};
+    }
+
+    // Cathetus neighbor? Split it.
+    if (f.hypn && ((nt.LEFT  === f.hypn.t) ||
+                   (nt.RIGHT === f.hypn.t))) {
+        console.log("_hcn cathetus neighbor.");
+        return split_hcn(f.hypn.id, f.hypn.t, new_ns, new_fs, old_fs);
+    }
+
+    // Hypotenuse neighbor? Split it here.
+    if (f.hypn && (nt.HYPN === f.hypn.t)) {
+        console.log("_hcn hypotenuse neighbor.");
+        return {new_fs: new_fs, old_fs: old_fs};
+    }
+
+console.log("_hcn end.");
+
+    return {};
 }
 
 function split_once(f) {
@@ -255,60 +384,103 @@ function remove_face(f_id) {
     f_faces = _.without(f_faces, get_face(f_id));
 }
 
-function split(f, origin) {
-    var fc_index;
-    var faces = [];
-    var n_faces = [];
-    var found = false;
-    var tn0, tn1, lcn, rcn;
+// function split(f, origin) {
+//     var fc_index;
+//     var faces = [];
+//     var n_faces = [];
+//     var found = false;
+//     var tn0, tn1, lcn, rcn;
 
-    // Find index of given face.
-    for (fc_index in f_faces) {
-        if (f_faces[fc_index] === f) {
-            found = true;
-            break;
-        }
+//     // Find index of given face.
+//     for (fc_index in f_faces) {
+//         if (f_faces[fc_index] === f) {
+//             found = true;
+//             break;
+//         }
+//     }
+
+// console.log("found ", found, f.name);
+
+//     if (!found) {return;}
+
+//     faces = split_once(f);
+//     n_faces = faces;
+
+//     if (origin) {
+//         if (f.lcn && (f.lcn === origin)) {
+// console.log("split left");
+//             lcn = [];
+//             lcn = split_once(faces[0]);
+//             faces = [faces[1]];
+//             f_faces = f_faces.concat(lcn);
+//             n_faces = JSON.parse(JSON.stringify(lcn));
+//             n_faces.push(faces[1]);
+//         }
+//         if (f.rcn && (f.rcn === origin)) {
+// console.log("split right");
+//             rcn = [];
+//             rcn = split_once(faces[1]);
+//             faces = [faces[0]];
+//             f_faces = f_faces.concat(lcn);
+//             n_faces = JSON.parse(JSON.stringify(rcn));
+//             n_faces.push(faces[0]);
+//         }
+//     }
+
+// console.log("remove ", f.name);
+
+//     remove_face(f);
+//     f_faces = f_faces.concat(faces);
+//     neighbors[fc_index] = n_faces;
+
+//     if (f.hypn && (f.hypn != origin)) {
+// console.log("f.hypn ", f.hypn.name);
+// console.log("f ", f.name);
+//         split(f.hypn, f);
+//     }
+// }
+
+/*
+ * Obtain face from given face ID f_id.
+ * Look at the face's neighbors.
+ * Call the appropriate split function.
+ */
+function split(f_id) {
+    var f, r;
+
+    f = get_face(f_id);
+
+    if (!f.lcn && !f.rcn && !f.hypn) {
+        console.log("split_0n");
+        r = split_0n(f_id);
+        remove_face(f_id);
+        f_faces = f_faces.concat(r);
     }
-
-console.log("found ", found, f.name);
     
-    if (!found) {return;}
-
-    faces = split_once(f);
-    n_faces = faces;
-
-    if (origin) {
-        if (f.lcn && (f.lcn === origin)) {
-console.log("split left");
-            lcn = [];
-            lcn = split_once(faces[0]);
-            faces = [faces[1]];
-            f_faces = f_faces.concat(lcn);
-            n_faces = JSON.parse(JSON.stringify(lcn));
-            n_faces.push(faces[1]);
-        }
-        if (f.rcn && (f.rcn === origin)) {
-console.log("split right");
-            rcn = [];
-            rcn = split_once(faces[1]);
-            faces = [faces[0]];
-            f_faces = f_faces.concat(lcn);
-            n_faces = JSON.parse(JSON.stringify(rcn));
-            n_faces.push(faces[0]);
-        }
+    if ((f.lcn || f.rcn) && !f.hypn) {
+        console.log("split_cXn");
+        r = split_cXn(f_id);
+        remove_face(f_id);
+        f_faces = f_faces.concat(r);
     }
 
-console.log("remove ", f.name);
-
-    remove_face(f);
-    f_faces = f_faces.concat(faces);
-    neighbors[fc_index] = n_faces;
-
-    if (f.hypn && (f.hypn != origin)) {
-console.log("f.hypn ", f.hypn.name);
-console.log("f ", f.name);
-        split(f.hypn, f);
+    if (f.hypn && (nt.HYPN === f.hypn.t)) {
+        console.log("split_hhn");
+        r = split_hhn(f_id);
+        remove_face(f_id);
+        remove_face(f.hypn.id);
+        f_faces = f_faces.concat(r);
     }
+
+    if (f.hypn && ((nt.LEFT === f.hypn.t) ||
+                   (nt.RIGHT === f.hypn.t))) {
+        console.log("split_hcn");
+        r = split_hcn(f_id);
+
+        console.log("split_hcn result: ", r);
+    }
+
+    console.log("end");
 }
 
 function split_by_name(name) {
@@ -686,18 +858,18 @@ var t7 = {lv: v5, rv: v7, tv: v8, id: face_id(), name: "t7"};
 // Neighbors and their relative sizes.
 // t0.lcn = null; t0.rcn = null; t0.hypn = t1.id;
 // t1.lcn = t2.id; t1.rcn = t4.id; t1.hypn = t0.id;
-t1.lcn = t2.id;
+t1.lcn = {id: t2.id, t: nt.LEFT};
 //t2.lcn = t1.id; t2.rcn = null; t2.hypn = t3.id;
 // t2.lcn = t1.id; t2.rcn = null; t2.hypn = null;
-t2.lcn = t1.id;
+t2.lcn = {id: t1.id, t: nt.LEFT};
 t3.lcn = null; t3.rcn = t6.id; t3.hypn = t2.id;
 t4.lcn = null; t4.rcn = t1.id; t4.hypn = t5.id;
 t5.lcn = t6.id; t5.rcn = null; t5.hypn = t4.id;
 t6.lcn = t5.id; t6.rcn = t3.id; t6.hypn = t7.id;
 t7.lcn = null; t7.rcn = null; t7.hypn = t6.id;
 
-f_faces = [t0];
-// f_faces = [t1, t2];
+// f_faces = [t0];
+f_faces = [t1, t2];
 // f_faces = [t0, t1, t2, t3, t4, t5, t6, t7];
 
 // geom.computeFaceNormals();
@@ -757,6 +929,26 @@ function reset_camera_translation() {
     camera.position.z = 1210;
 }
 
+function split_n(n) {
+    var id, f, faces;
+    if (!f_faces[n]) {console.log("split_n no faces"); return;}
+    id = f_faces[n].id;
+    split(id);
+    old_mesh = new_mesh;
+    new_mesh = set_geom();
+    update_scene(old_mesh, new_mesh);
+}
+
+function split_id(f_id) {
+    var id, f, faces;
+    f = get_face(f_id);
+    if (!f) {console.log("split_id no faces"); return;}
+    split(f.id);
+    old_mesh = new_mesh;
+    new_mesh = set_geom();
+    update_scene(old_mesh, new_mesh);
+}
+
 document.addEventListener
 ('keydown', function(e)
  {
@@ -805,11 +997,7 @@ document.addEventListener
      }
 
      if (e.keyCode === key_codes.KEY_n) {
-         split(t0);
-         assign_neighbors(neighbors);
-         old_mesh = new_mesh;
-         new_mesh = set_geom();
-         update_scene(old_mesh, new_mesh);
+         split_1();
      }
  });
 
@@ -895,7 +1083,7 @@ var labels = [];
 function label() {
     var i, spritey, a, b, c, _t;
     for (i = 0; i < geom.faces.length; i += 1) {
-        spritey = makeTextSprite(" " + f_faces[i].name + " ", {fontsize: 32, backgroundColor: {r:0, g:0, b:0, a:0}});
+        spritey = makeTextSprite(" " + f_faces[i].id + " ", {fontsize: 32, backgroundColor: {r:0, g:0, b:0, a:0}});
         a = geom.vertices[geom.faces[i].a];
         c = geom.vertices[geom.faces[i].b];
         b = geom.vertices[geom.faces[i].c];
