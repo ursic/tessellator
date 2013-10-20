@@ -24,12 +24,12 @@ var ornt = {LEFT_TO_LEFT:    1,
 var m_points = [];
 var f_vertices = [];
 var f_faces = [];
-var history = [];
-var history_p = 0;
+// var history = [];
+// var history_p = 0;
 var neighbors = [];
 
 function face_id() {
-    return rnd_str(3).toUpperCase();
+    return rnd_str(6).toUpperCase();
 }
 
 function vertex_id() {
@@ -86,7 +86,10 @@ function set_geom() {
 
     i = 0;
     _.each(f_faces, function(f) {
-        geom.faces.push(new THREE.Face3(i, i + 1, i + 2));
+        var _f;
+        _f = new THREE.Face3(i, i + 1, i + 2);
+        _f.id = f.id;
+        geom.faces.push(_f);
         i += 3;
     });
 
@@ -111,7 +114,9 @@ function get_middle_point(p1, p2) {
     first_is_smaller = p1 < p2;
     smaller_index = first_is_smaller ? p1 : p2;
     greater_index = first_is_smaller ? p2 : p1;
-    key = (smaller_index << 32) + greater_index;
+//    key = (smaller_index << 32) + greater_index;
+    // Shift by 24 for JavaScript.
+    key = (smaller_index << 24) + greater_index; 
 
     if (m_points[key]) {return m_points[key];}
 
@@ -348,15 +353,11 @@ function split_hcn(f_id, which_cath = null, new_ns = {}, new_fs = [], old_fs = [
 
     // No hypotenuse neighbor?
     if (_.isEmpty(new_ns) && !f.hypn) {
-        console.log("_hcn no hypotenuse neighbor.");
         return {new_fs: new_fs, old_fs: old_fs};
     }
 
-    console.log("_hcn start");
-
     // Initial split.
     if (_.isEmpty(new_ns)) {
-console.log("_hcn initial split");
         sr = split_once(f);
         twr = assign_twins(sr[0], sr[1]);
         r = assign_hXn(f, twr.lf, twr.rf);
@@ -376,7 +377,6 @@ console.log("_hcn initial split");
     // Assign bigger right face and left twin
     // as neighbors to each other.
     if (nt.LEFT === which_cath) {
-console.log("_hcn which_catch nt.LEFT");
         sr2.rf.rcn = {id: sr2.twins.lf.id, t: nt.HYPN};
         sr2.twins.lf.hypn = {id: sr2.rf.id, t: nt.RIGHT};
         sr2.rf = assign_rf_cXn(f, sr2.rf);
@@ -385,7 +385,6 @@ console.log("_hcn which_catch nt.LEFT");
     // Assign bigger left face and right twin
     // as neighbors to each other.
     if (nt.RIGHT === which_cath) {
-console.log("_hcn which_catch nt.RIGHT");
         sr2.lf.lcn = {id: sr2.twins.rf.id, t: nt.HYPN};
         sr2.twins.rf.hypn = {id: sr2.lf.id, t: nt.LEFT};
         sr2.lf = assign_lf_cXn(f, sr2.lf);
@@ -401,23 +400,19 @@ console.log("_hcn which_catch nt.RIGHT");
     sr2.twins.rf.lcn = {id: lf.id, t: new_ns.lf.ft};
 
     if (new_ns.lf.ft === nt.RIGHT) {
-console.log("new_ns.lf.ft === nt.RIGHT");
         lf.rcn = {id: sr2.twins.rf.id, t: nt.LEFT};
         cv = lf.tv;
     }
     if (new_ns.lf.ft === nt.HYPN) {
-console.log("new_ns.lf.ft === nt.HYPN");
         lf.hypn = {id: sr2.twins.rf.id, t: nt.LEFT};
         cv = lf.rv;
     }
     new_fs.push(lf);
 
     if (new_ns.rf.ft === nt.LEFT) {
-console.log("new_ns.rf.ft === nt.LEFT");
         rf.lcn = {id: sr2.twins.lf.id, t: nt.RIGHT};
     }
     if (new_ns.rf.ft === nt.HYPN) {
-console.log("new_ns.rf.ft === nt.HYPN");
         rf.hypn = {id: sr2.twins.lf.id, t: nt.RIGHT};
     }
     new_fs.push(rf);
@@ -431,23 +426,17 @@ console.log("new_ns.rf.ft === nt.HYPN");
 
     // No hypotenuse neighbor? Stop.
     if (!f.hypn) {
-        console.log("_hcn No neighbor.");
         return {new_fs: new_fs, old_fs: old_fs};
     }
 
     // Cathetus neighbor? Split it.
     if (f.hypn && ((nt.LEFT  === f.hypn.t) ||
                    (nt.RIGHT === f.hypn.t))) {
-
-        console.log("_hcn cathetus neighbor.");
-
         if (nt.LEFT === which_cath) {
-            console.log("_hcn cathetus neighbor which_catch nt.LEFT");
             new_ns = {lf: {id: sr2.twins.rf.id, ft: nt.HYPN},
                       rf: {id: sr2.rf.id,       ft: nt.LEFT}};
         }
         if (nt.RIGHT === which_cath) {
-            console.log("_hcn cathetus neighbor which_catch nt.RIGHT");
             new_ns = {lf: {id: sr2.lf.id,       ft: nt.RIGHT},
                       rf: {id: sr2.twins.lf.id, ft: nt.HYPN}};
         }
@@ -458,7 +447,6 @@ console.log("new_ns.rf.ft === nt.HYPN");
     // Hypotenuse neighbor? Split it here.
     // Finish sr2.twins.Xf and sr2.Xf neighbor assignments.
     if (f.hypn && (nt.HYPN === f.hypn.t)) {
-        console.log("_hcn hypotenuse neighbor.");
         if (nt.LEFT === which_cath) {
             new_ns = {lf: {id: sr2.twins.rf.id, ft: nt.HYPN},
                       rf: {id: sr2.rf.id,       ft: nt.LEFT}};
@@ -472,12 +460,7 @@ console.log("new_ns.rf.ft === nt.HYPN");
         lf = _.find(new_fs, function(f) {return f.id === new_ns.lf.id;});
         rf = _.find(new_fs, function(f) {return f.id === new_ns.rf.id;});
 
-        console.log("_hcn new_ns.lf ", new_ns.lf.id, new_ns.lf.ft);
-        console.log("_hcn new_ns.rf ", new_ns.rf.id, new_ns.rf.ft);
-console.log("_hcn to split f.hypn", f.hypn.id);
         sr = split_once(f);
-console.log("_hcn sr[0].tv", sr[0].id, sr[0].tv, f_vertices[sr[0].tv]);
-console.log("_hcn sr[1].tv", sr[1].id, sr[1].tv, f_vertices[sr[1].tv]);
         old_fs.push(f.id);
         twr = assign_twins(sr[0], sr[1]);
         r = assign_hXn(f, twr.lf, twr.rf);
@@ -486,14 +469,12 @@ console.log("_hcn sr[1].tv", sr[1].id, sr[1].tv, f_vertices[sr[1].tv]);
         new_fs = _.without(new_fs, rf);
 
         if (nt.LEFT === which_cath) {
-console.log("_hcn lf.rv", lf.id, lf.rv, f_vertices[lf.rv]);
             lf.hypn  = {id: r.rf.id, t: nt.LEFT};
             rf.lcn   = {id: r.lf.id, t: nt.RIGHT};
             r.lf.rcn = {id: rf.id,   t: nt.LEFT};
             r.rf.lcn = {id: lf.id,   t: nt.HYPN};
         }
         if (nt.RIGHT === which_cath) {
-console.log("_hcn rf.lv", rf.id, rf.lv, f_vertices[rf.lv]);
             rf.hypn  = {id: r.lf.id, t: nt.RIGHT};
             lf.rcn   = {id: r.rf.id, t: nt.LEFT};
             r.lf.rcn = {id: rf.id,   t: nt.HYPN};
@@ -539,21 +520,18 @@ function split(f_id) {
     f = get_face(f_id);
 
     if (!f.lcn && !f.rcn && !f.hypn) {
-        console.log("split_0n");
         r = split_0n(f_id);
         remove_face(f_id);
         f_faces = f_faces.concat(r);
     }
     
     if ((f.lcn || f.rcn) && !f.hypn) {
-        console.log("split_cXn");
         r = split_cXn(f_id);
         remove_face(f_id);
         f_faces = f_faces.concat(r);
     }
 
     if (f.hypn && (nt.HYPN === f.hypn.t)) {
-        console.log("split_hhn");
         r = split_hhn(f_id);
         remove_face(f_id);
         remove_face(f.hypn.id);
@@ -562,10 +540,7 @@ function split(f_id) {
 
     if (f.hypn && ((nt.LEFT === f.hypn.t) ||
                    (nt.RIGHT === f.hypn.t))) {
-        console.log("split_hcn");
         r = split_hcn(f_id);
-
-        console.log("split_hcn result: ", r);
 
         _.each(r.old_fs, function(f_id) {
             remove_face(f_id);
@@ -574,365 +549,12 @@ function split(f_id) {
         f_faces = f_faces.concat(r.new_fs);
     }
 
-    history.push({vs: JSON.parse(JSON.stringify(f_vertices)),
-                  fs: JSON.parse(JSON.stringify(f_faces))});
-    history_p += 1;
+    // history.push({vs: JSON.parse(JSON.stringify(f_vertices)),
+    //               fs: JSON.parse(JSON.stringify(f_faces))});
+    // history_p += 1;
 
-    console.log("end");
+    console.log("split end", f_faces.length);
 }
-
-// function split_by_name(name) {
-//     var f = _.find(f_faces, function(_f) {return _f.name === name;});
-//     split(f);
-// //    assign_neighbors(neighbors);
-//     old_mesh = new_mesh;
-//     new_mesh = set_geom();
-//     update_scene(old_mesh, new_mesh);
-// }
-
-// function assign_neighbors(n_faces) {
-//     var origin, origin_face, tn0, tn1, i,
-//         first, second, first_face, second_face, tn2, tn3,
-//         tg0, tg1, tg2, tg3, tnX;
-
-//     if (!n_faces) {return;}
-
-//     if (n_faces.length <= 0) {
-//         console.log("No neighboring candidates.");
-//         return;
-//     }
-
-//     // 2/0 - no hypotenuse neighbor
-//     if (1 === n_faces.length) {
-// console.log("2/0 - no hypotenuse neighbor");
-//         origin = _.keys(n_faces)[0];
-//         origin_face = f_faces[origin];
-
-// console.log("origin ", origin_face.name);
-
-//         tn0 = n_faces[origin][0];
-//         tn1 = n_faces[origin][1];
-
-//         // Assign new neighbors to surrounding faces.
-//         // Left cathetus neighbor.
-//         if (origin_face.lcn) {
-//             console.log("Left cathetus neighbor.");
-
-//             if (origin_face.lcn.lcn === origin_face) {
-// console.log("left one ", origin_face.lcn.lcn.name);
-// console.log("tn0 ", tn0.name);
-//                 origin_face.lcn.lcn = tn0;
-//             }
-
-//             if (origin_face.lcn.rcn === origin_face) {
-//                 origin_face.lcn.rcn = tn0;
-//             }
-
-//             tn0.hypn = origin_face.lcn;
-//         }
-
-//         // Right cathetus neighbor.
-//         if (origin_face.rcn) {
-//             console.log("Right cathetus neighbor.");
-
-//             if (origin_face.rcn.lcn === origin_face)
-//                 origin_face.rcn.lcn = tn1;
-
-//             if (origin_face.rcn.rcn === origin_face)
-//                 origin_face.rcn.rcn = tn1;
-
-//             tn1.hypn = origin_face.rcn;
-//         }
-
-//         // Child faces are neighbors to each other.
-//         tn0.lcn = tn1;
-//         tn1.rcn = tn0;
-//     }
-
-//     for (i = 0; i < n_faces.length; i += 1) {
-//         first = _.keys(n_faces)[i];
-//         if ((i + 1) < n_faces.length) {
-//             second = _.keys(n_faces)[i + 1];
-//         } else {
-//             break;
-//         }
-
-//         // Each original face splits into two children.
-//         if ((first && second) &&
-//             ((2 === n_faces[first].length) && (2 === n_faces[second].length)))
-//         {
-//             console.log("2/2 i: ", i);
-
-//            tn0 = n_faces[first][0];
-//            tn1 = n_faces[first][1];
-
-//            tn2 = n_faces[second][0];
-//            tn3 = n_faces[second][1];
-
-//             first_face = f_faces[first];
-//             second_face = f_faces[second];
-
-//             // Assign new neighbors to surrounding faces.
-//             // Left cathetus neighbor of the first face.
-//             if (first_face.lcn)
-//             {
-//                 if (first_face.lcn.lcn === first_face)
-//                     first_face.lcn.lcn = tn0;
-
-//                 if (first_face.lcn.rcn === first_face)
-//                     first_face.lcn.rcn = tn0;
-                
-//                 tn0.hypn = first_face.lcn;
-//             }
-
-//             // Right cathetus neighbor of the first face.
-//             if (first_face.rcn)
-//             {
-//                 if (first_face.rcn.lcn === first_face)
-//                     first_face.rcn.lcn = tn1;
-
-//                 if (first_face.rcn.rcn === first_face)
-//                     first_face.rcn.rcn = tn1;
-                
-//                 tn1.hypn = first_face.rcn;
-//             }
-
-//             // Child faces are neighbors to each other.
-//             tn0.lcn = tn1;
-//             tn0.rcn = tn3;
-
-//             tn1.lcn = tn2;
-//             tn1.rcn = tn0;
-            
-//             tn2.lcn = tn3;
-//             tn2.rcn = tn1;
-
-//             tn3.lcn = tn0;
-//             tn3.rcn = tn2;
-
-//             // Assign new neighbors to surrounding faces
-//             // if second face is the last face.
-//             if (i === n_faces.length - 2) {
-//                 // Left cathetus neighbor of the second face.
-//                 if (second_face.lcn) {
-//                     if (second_face.lcn.lcn === second_face)
-//                         second_face.lcn.lcn = tn2;
-
-//                     if (second_face.lcn.rcn === second_face)
-//                         second_face.lcn.rcn = tn2;
-
-//                     if (second_face.lcn.hypn === second_face)
-//                         second_face.lcn.hypn = tn2;
-                
-//                     tn2.hypn = second_face.lcn;
-//                 }
-
-//                 // Right cathetus neighbor of the second face.
-//                 if (second_face.rcn) {
-//                     if (second_face.rcn.lcn === second_face)
-//                         second_face.rcn.lcn = tn3;
-
-//                     if (second_face.rcn.rcn === second_face)
-//                         second_face.rcn.rcn = tn3;
-
-//                     if (second_face.rcn.hypn === second_face)
-//                         second_face.rcn.hypn = tn3;
-                
-//                     tn3.hypn = second_face.rcn;
-//                 }
-//             }
-//         }
-
-//         // First original face splits into two children.
-//         // Second original face splits into three children.
-//         if ((first && second) &&
-//             ((2 === n_faces[first].length) && (3 === n_faces[second].length))) {
-//             console.log("2/3 i: ", i);
-
-//             tg0 = n_faces[first][0];
-//             tg1 = n_faces[first][1];
-
-//             tg2 = n_faces[second][0];
-//             tg3 = n_faces[second][1];
-
-//             tnX = n_faces[second][2];
-            
-//             // Assign new neighbors to surrounding faces.
-//             // Left cathetus neighbor of the first face.
-//             if (first_face.lcn) {
-//                 if (first_face.lcn.lcn === first_face)
-//                     first_face.lcn.lcn = tg0;
-
-//                 if (first_face.lcn.rcn === first_face)
-//                     first_face.lcn.rcn = tg0;
-                
-//                 tg0.hypn = first_face.lcn;
-//             }
-
-//             // Right cathetus neighbor of the first face.
-//             if (first_face.rcn) {
-//                 if (first_face.rcn.lcn === first_face)
-//                     first_face.rcn.lcn = tg1;
-
-//                 if (first_face.rcn.rcn === first_face)
-//                     first_face.rcn.rcn = tg1;
-                
-//                 tg1.hypn = first_face.rcn;
-//             }
-
-//             // Find out which cathetus of the second face is neighbouring
-//             // the first face.
-//             if (second_face.lcn && (first === second_face.lcn)) {
-//                 console.log("the left cathetus");
-
-//                 tg0.lcn = tg1;
-//                 tg0.rcn = tg3;
-
-//                 tg1.lcn = tg2;
-//                 tg1.rcn = tg0;
-
-//                 tg2.lcn = tg3;
-//                 tg2.rcn = tg1;
-//                 tg2.hypn = tnX;
-
-//                 tg3.lcn = tg0;
-//                 tg3.rcn = tg2;
-
-//                 tnX.rcn = tg2;
-//                 tnX.hypn = second_face.rcn;
-
-//                 if (second_face.rcn) {
-//                     if (second_face.rcn.lcn === second_face)
-//                         second_face.rcn.lcn = tnX;
-
-//                     if (second_face.rcn.rcn === second_face)
-//                         second.rcn.rcn = tnX;
-
-//                     if (second_face.rcn.hypn === second_face)
-//                         second_face.rcn.hypn = tnX;
-//                 }
-//             }
-
-//             if (second_face.rcn && (first_face === second_face.rcn)) {
-//                 console.log("the right cathetus");
-
-//                 tg0.lcn = tg1;
-//                 tg0.rcn = tg3;
-
-//                 tg1.lcn = tg2;
-//                 tg1.rcn = tg0;
-
-//                 tg2.lcn = tg3;
-//                 tg2.rcn = tg1;
-
-//                 tg3.lcn = tg0;
-//                 tg3.rcn = tg2;
-//                 tg3.hypn = tnX;
-
-//                 tnX.lcn = tg3;
-//                 tnX.hypn = second_face.lcn;
-
-//                 if (second_face.lcn) {
-//                     if (second_face.lcn.lcn === second_face)
-//                         second_face.lcn.lcn = tnX;
-
-//                     if (second_face.lcn.rcn === second_face)
-//                         second_face.lcn.rcn = tnX;
-
-//                     if (second_face.lcn.hypn === second_face)
-//                         second_face.lcn.hypn = tnX;
-//                 }
-//             }
-//         }
-
-//         // First original face splits into three children.
-//         // Second original face splits into two children.
-//         if ((first && second) &&
-//             ((3 === n_faces[first].length) && (2 === n_faces[second].length))) {
-//             console.log("3/2 i: ", i);
-
-//             tg0 = n_faces[first][0];
-//             tg1 = n_faces[first][1];
-
-//             tn0 = n_faces[first][2];
-
-//             tn1 = n_faces[second][0];
-//             tn2 = n_faces[second][1];
-
-//             // Find out which side of the first face is halved.
-//             if (tn0.rcn && tg0 === tn0.rcn) {
-//                 console.log("the left side is halved");
-
-//                 tg1.hypn = tn2;
-
-//                 tn0.lcn = tn1;
-
-//                 tn1.lcn = tn2;
-//                 tn1.rcn = tn0;
-
-//                 tn2.lcn = tg1;
-//                 tn2.rcn = tn1;
-//             }
-
-//             if (tn0.lcn && (tg1 === tn0.lcn)) {
-//                 console.log("the right side is halved");
-
-//                 tg0.hypn = tn1;
-
-//                 tn0.rcn = tn2;
-
-//                 tn1.lcn = tn2;
-//                 tn1.rcn = tg0;
-                
-//                 tn2.lcn = tn0;
-//                 tn2.rcn = tn1;
-//             }
-
-//             if (second_face.lcn) {
-//                 if (second_face.lcn.lcn === second_face)
-//                     second_face.lcn.lcn = tn1;
-
-//                 if (second_face.lcn.rcn === second_face)
-//                     second_face.lcn.rcn = tn1;
-
-//                 if (second_face.lcn.hypn === second_face)
-//                     second_face.lcn.hypn = tn1;
-                
-//                 tn1.hypn = second_face.lcn;
-//             }
-
-//             if (second_face.rcn) {
-//                 if (second_face.rcn.lcn === second_face)
-//                     second_face.rcn.lcn = tn2;
-
-//                 if (second_face.rcn.rcn === second_face)
-//                     second_face.rcn.rcn = tn2;
-
-//                 if (second_face.rcn.hypn === second_face)
-//                     second_face.rcn.hypn = tn2;
-                
-//                 tn2.hypn = second_face.rcn;
-//             }
-//         }
-
-//         // Each original face splits into three children.
-//         if ((first && second) &&
-//             ((3 === n_faces[first].length) && (3 === n_faces[second].length)))
-//         {
-//             console.log("3/3 i: ", i);
-
-            
-//         }
-//     }
-
-//     // 2/3 NAREJENO
-
-//     // 3/2 NAREJENO
-
-//     // 3/3 NAREJENO
-
-//     neighbors = [];
-// }
 
 var v0 = add_vertex(-floorSize / 2, 0, -floorSize / 2);
 var v1 = add_vertex(0, 0, -floorSize / 2);
@@ -976,8 +598,8 @@ t7.hypn = {id: t6.id, t: nt.HYPN};
 // f_faces = [t1, t2];
 f_faces = [t0, t1, t2, t3, t4, t5, t6, t7];
 
-history.push({vs: JSON.parse(JSON.stringify(f_vertices)),
-              fs: JSON.parse(JSON.stringify(f_faces))});
+// history.push({vs: JSON.parse(JSON.stringify(f_vertices)),
+//               fs: JSON.parse(JSON.stringify(f_faces))});
 
 new_mesh = set_geom();
 update_scene(null, new_mesh);
@@ -1000,7 +622,9 @@ var key_codes = {KEY_UP: 38,
                  KEY_t: 84,
                  KEY_n: 78,
                  KEY_i: 73,
-                 KEY_u: 85};
+                 KEY_u: 85,
+                 KEY_o: 79,
+                 KEY_l: 76};
 
 var rotation_commands = {KEY_UP:     {axis: 'x', step:  0.02},
                          KEY_DOWN:   {axis: 'x', step: -0.02},
@@ -1091,24 +715,28 @@ document.addEventListener
      }
      
      if (e.keyCode === key_codes.KEY_u) {
-         history_p = (0 === history_p) ? 0 : (history_p -= 1);
-         if (!history[history_p]) {return;}
-         f_vertices = history[history_p].vs;
-         f_faces = history[history_p].fs;
+         // history_p = (0 === history_p) ? 0 : (history_p -= 1);
+         // if (!history[history_p]) {return;}
+         // f_vertices = history[history_p].vs;
+         // f_faces = history[history_p].fs;
 
-         update_world();
-         remove_labels();
-         label();
+         // update_world();
      }
 
      if (e.keyCode === key_codes.KEY_i) {
-         if (!history[history_p + 1]) {return;}
-         history_p += 1;
-         f_vertices = history[history_p].vs;
-         f_faces = history[history_p].fs;
+         // if (!history[history_p + 1]) {return;}
+         // history_p += 1;
+         // f_vertices = history[history_p].vs;
+         // f_faces = history[history_p].fs;
 
-         update_world();
+         // update_world();
+     }
+
+     if (e.keyCode === key_codes.KEY_o) {
          remove_labels();
+     }
+
+     if (e.keyCode === key_codes.KEY_l) {
          label();
      }
 
@@ -1127,6 +755,27 @@ document.addEventListener
          split_1();
      }
  });
+
+var INTERSECTED = null;
+
+document.addEventListener
+('mousedown', function(e) {
+    var vector, projector, raycaster, intersects, particle;
+
+    if (2 !== e.which) {return;}
+
+    // event.preventDefault();
+
+    vector = new THREE.Vector3((e.clientX / window.innerWidth) * 2 - 1, - (e.clientY / window.innerHeight) * 2 + 1, 0.5);
+    projector = new THREE.Projector();
+    projector.unprojectVector(vector, camera);
+
+    raycaster = new THREE.Raycaster();
+    raycaster.set(camera.position, vector.sub(camera.position).normalize());
+    intersects = raycaster.intersectObjects(scene.children);
+
+    !_.isEmpty(intersects) && split_id(intersects[0].face.id);
+});
 
 // function for drawing rounded rectangles
 function roundRect(ctx, x, y, w, h, r) 
@@ -1241,6 +890,8 @@ var render = function() {
 };
 
 render();
+
+
 
 // split_id(f_faces[0].id);split_id(f_faces[0].id);split_id(f_faces[2].id);split_id(f_faces[2].id);
 // split_id(f_faces[0].id);split_id(f_faces[0].id);split_id(f_faces[2].id);
