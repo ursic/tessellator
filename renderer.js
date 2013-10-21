@@ -3,7 +3,7 @@ var floorSize = 1000;
 var scene = new THREE.Scene();
 var old_mesh, new_mesh;
 
-var camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
+var camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 4000);
 
 var renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -29,7 +29,7 @@ var f_faces = [];
 var neighbors = [];
 
 function face_id() {
-    return rnd_str(6).toUpperCase();
+    return rnd_str(5).toUpperCase();
 }
 
 function vertex_id() {
@@ -123,7 +123,9 @@ function get_middle_point(p1, p2) {
     v1 = get_vertex(p1);
     v2 = get_vertex(p2);
 
-    i = add_vertex((v1.x + v2.x) / 2, 0, (v1.z + v2.z) / 2);
+    i = add_vertex((v1.x + v2.x) / 2,
+                   (v1.y + v2.y) / 2,
+                   (v1.z + v2.z) / 2);
     m_points[key] = i;
 
     return i;
@@ -596,10 +598,100 @@ t7.hypn = {id: t6.id, t: nt.HYPN};
 
 // f_faces = [t0];
 // f_faces = [t1, t2];
-f_faces = [t0, t1, t2, t3, t4, t5, t6, t7];
+// f_faces = [t0, t1, t2, t3, t4, t5, t6, t7];
 
 // history.push({vs: JSON.parse(JSON.stringify(f_vertices)),
 //               fs: JSON.parse(JSON.stringify(f_faces))});
+
+var floor_half = floorSize / 2;
+
+// "back" side
+var v9 = add_vertex(-floor_half, -floor_half, -floor_half);
+var v10 = add_vertex(floor_half, -floor_half, -floor_half);
+var v11 = add_vertex(floor_half, floor_half, -floor_half);
+var v12 = add_vertex(-floor_half, floor_half, -floor_half);
+
+// "front" side
+var v13 = add_vertex(-floor_half, -floor_half, floor_half);
+var v14 = add_vertex(floor_half, -floor_half, floor_half);
+var v15 = add_vertex(floor_half, floor_half, floor_half);
+var v16 = add_vertex(-floor_half, floor_half, floor_half);
+
+// "back" side
+var t8 = {lv: v10, rv: v12, tv: v9, id: face_id(), name: "t8"};
+var t9 = {lv: v12, rv: v10, tv: v11, id: face_id(), name: "t9"};
+
+// "left" side
+var t10 = {lv: v9, rv: v16, tv: v13, id: face_id(), name: "t10"};
+var t11 = {lv: v16, rv: v9, tv: v12, id: face_id(), name: "t11"};
+
+// "bottom" side
+var t12 = {lv: v14, rv: v9, tv: v13, id: face_id(), name: "t12"};
+var t13 = {lv: v9, rv: v14, tv: v10, id: face_id(), name: "t13"};
+
+// "right" side
+var t14 = {lv: v14, rv: v11, tv: v10, id: face_id(), name: "t14"};
+var t15 = {lv: v11, rv: v14, tv: v15, id: face_id(), name: "t15"};
+
+// "front" side
+var t16 = {lv: v16, rv: v14, tv: v13, id: face_id(), name: "t16"};
+var t17 = {lv: v14, rv: v16, tv: v15, id: face_id(), name: "t17"};
+
+// "top" side
+var t18 = {lv: v11, rv: v16, tv: v12, id: face_id(), name: "t18"};
+var t19 = {lv: v16, rv: v11, tv: v15, id: face_id(), name: "t19"};
+
+t8.rcn = {id: t11.id, t: nt.RIGHT};
+t8.lcn = {id: t13.id, t: nt.LEFT};
+t8.hypn = {id: t9.id, t: nt.HYPN};
+
+t9.lcn = {id: t18.id, t: nt.LEFT};
+t9.rcn = {id: t14.id, t: nt.RIGHT};
+t9.hypn = {id: t8.id, t: nt.HYPN};
+
+t10.lcn = {id: t12.id, t: nt.RIGHT};
+t10.rcn = {id: t16.id, t: nt.LEFT};
+t10.hypn = {id: t11.id, t: nt.HYPN};
+
+t11.lcn = {id: t18.id, t: nt.RIGHT};
+t11.rcn = {id: t8.id, t: nt.RIGHT};
+t11.hypn = {id: t10.id, t: nt.HYPN};
+
+t12.lcn = {id: t16.id, t: nt.RIGHT};
+t12.rcn = {id: t10.id, t: nt.LEFT};
+t12.hypn = {id: t13.id, t: nt.HYPN};
+
+t13.lcn = {id: t8.id, t: nt.LEFT};
+t13.rcn = {id: t14.id, t: nt.LEFT};
+t13.hypn = {id: t12.id, t: nt.HYPN};
+
+t14.lcn = {id: t13.id, t: nt.RIGHT};
+t14.rcn = {id: t9.id, t: nt.RIGHT};
+t14.hypn = {id: t15.id, t: nt.HYPN};
+
+t15.lcn = {id: t19.id, t: nt.RIGHT};
+t15.rcn = {id: t17.id, t: nt.LEFT};
+t15.hypn = {id: t14.id, t: nt.HYPN};
+
+t16.lcn = {id: t10.id, t: nt.RIGHT};
+t16.rcn = {id: t12.id, t: nt.LEFT};
+t16.hypn = {id: t17.id, t: nt.HYPN};
+
+t17.lcn = {id: t15.id, t: nt.RIGHT};
+t17.rcn = {id: t19.id, t: nt.LEFT};
+t17.hypn = {id: t16.id, t: nt.HYPN};
+
+t18.lcn = {id: t9.id, t: nt.LEFT};
+t18.rcn = {id: t11.id, t: nt.LEFT};
+t18.hypn = {id: t19.id, t: nt.HYPN};
+
+t19.lcn = {id: t17.id, t: nt.RIGHT};
+t19.rcn = {id: t15.id, t: nt.LEFT};
+t19.hypn = {id: t18.id, t: nt.HYPN};
+
+// f_faces = [t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13];
+f_faces = [t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19];
+// f_faces = [t8];
 
 new_mesh = set_geom();
 update_scene(null, new_mesh);
@@ -859,7 +951,7 @@ var labels = [];
 function label() {
     var i, spritey, a, b, c, _t;
     for (i = 0; i < geom.faces.length; i += 1) {
-        spritey = makeTextSprite(" " + f_faces[i].id + " ", {fontsize: 32, backgroundColor: {r:0, g:0, b:0, a:0}});
+        spritey = makeTextSprite(" " + f_faces[i].name + " ", {fontsize: 32, backgroundColor: {r:0, g:0, b:0, a:0}});
         a = geom.vertices[geom.faces[i].a];
         c = geom.vertices[geom.faces[i].b];
         b = geom.vertices[geom.faces[i].c];
