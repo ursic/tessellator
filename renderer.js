@@ -835,10 +835,6 @@ document.addEventListener
          camera.rotation.y = 0;
          camera.rotation.z = 0;
      }
-
-     if (e.keyCode === key_codes.KEY_n) {
-         split_1();
-     }
  });
 
 var INTERSECTED = null;
