@@ -14,12 +14,9 @@ controls = new THREE.OrbitControls(camera, renderer.domElement);
 
 var geom;
 var nt = {LEFT: 1, RIGHT: 2, HYPN: 4};
-var ornt = {LEFT_TO_LEFT:    1,
-            LEFT_TO_RIGHT:   2,
-            RIGHT_TO_LEFT:   4,
-            RIGHT_TO_RIGHT:  8,
-            HYPN_TO_LEFT:   16,
-            HYPN_TO_RIGHT:  32};
+
+var ornt = {HYPN_TO_LEFT:  1,
+            HYPN_TO_RIGHT: 2};
 
 var m_points = [];
 var f_vertices = [];
@@ -270,7 +267,6 @@ function split_cXn(f_id) {
     f = get_face(f_id);
     if (!f) {return [];}
     if (!f.lcn && !f.rcn) {
-        console.log("_cXn no neighbors");
         return [];
     }
 
@@ -291,11 +287,8 @@ function split_hhn(f_id) {
     f = get_face(f_id);
     if (!f) {return [];}
     if (!f.hypn || (nt.HYPN !== f.hypn.t)) {
-        console.log("_hhn no hypn neighbors");
         return [];
     }
-
-    console.log("_hhn", f_id);
 
     sr = split_once(f);
     cv = sr[0].tv; // Common vertex.
@@ -488,8 +481,6 @@ function split_hcn(f_id, which_cath = null, new_ns = {}, new_fs = [], old_fs = [
         return {new_fs: new_fs, old_fs: old_fs};
     }
 
-console.log("_hcn end.");
-
     return {};
 }
 
@@ -554,8 +545,6 @@ function split(f_id) {
     // history.push({vs: JSON.parse(JSON.stringify(f_vertices)),
     //               fs: JSON.parse(JSON.stringify(f_faces))});
     // history_p += 1;
-
-    console.log("split end", f_faces.length);
 }
 
 var v0 = add_vertex(-floorSize / 2, 0, -floorSize / 2);
@@ -754,7 +743,9 @@ function reset_camera_translation() {
 
 function split_n(n) {
     var id, f, faces;
-    if (!f_faces[n]) {console.log("split_n no faces"); return;}
+    if (!f_faces[n]) {
+        return;
+    }
     id = f_faces[n].id;
     split(id);
     old_mesh = new_mesh;
@@ -765,7 +756,9 @@ function split_n(n) {
 function split_id(f_id) {
     var id, f, faces;
     f = get_face(f_id);
-    if (!f) {console.log("split_id no faces"); return;}
+    if (!f) {
+        return;
+    }
     split(f.id);
     update_world();
 }
